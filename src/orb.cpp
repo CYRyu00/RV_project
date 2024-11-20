@@ -47,7 +47,7 @@
 namespace cv
 {
 
-//const float HARRIS_K = 0.04f;
+const float HARRIS_K = 0.04f;
 
 template<typename _Tp> inline void copyVectorToUMat(const std::vector<_Tp>& v, OutputArray um)
 {
