@@ -38,7 +38,8 @@
 #include "opencl_kernels_features2d.hpp"
 #include <iterator>
 #include <iostream>
-
+#include <fstream>
+#include <opencv2/core/utils/logger.hpp>
 #ifndef CV_IMPL_ADD
 #define CV_IMPL_ADD(x)
 #endif
@@ -1017,7 +1018,11 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _depth, InputArra
                                  std::vector<KeyPoint>& keypoints,
                                  OutputArray _descriptors, bool useProvidedKeypoints )
 {   
-    std::cout << "start detectandcompute" << std::endl;
+    std::ofstream logFile("output.log", std::ios::app); // Open in append mode
+    if (logFile.is_open()) {
+        logFile << "start detect and compute" << std::endl;
+        logFile.close();
+    }
     CV_INSTRUMENT_REGION();
 
     CV_Assert(patchSize >= 2);
@@ -1047,13 +1052,17 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _depth, InputArra
 
     Mat depth;
     if (!_depth.empty()) {
-        std::cout << "Got a depth infromation" << std::endl;
+        logFile.open("output.log", std::ios::app); // Open in append mode again
+        if (logFile.is_open()) {
+            logFile << "Got a Depth Data" << std::endl;
+            logFile.close();
+        }
+
         depth = _depth.getMat();
         if (depth.type() != CV_32F) {
             depth.convertTo(depth, CV_32F);
         }
         // Ensure depth matches image size
-        CV_Assert(false);
         CV_Assert(depth.size() == image.size());
     }
 
