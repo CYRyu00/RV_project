@@ -37,6 +37,7 @@
 #include "precomp.hpp"
 #include "opencl_kernels_features2d.hpp"
 #include <iterator>
+#include <iostream>
 
 #ifndef CV_IMPL_ADD
 #define CV_IMPL_ADD(x)
@@ -704,8 +705,8 @@ public:
     int defaultNorm() const CV_OVERRIDE;
 
     // Compute the ORB_Impl features and descriptors on an image
-    void detectAndCompute( InputArray image, InputArray mask, std::vector<KeyPoint>& keypoints,
-                     OutputArray descriptors, bool useProvidedKeypoints=false ) CV_OVERRIDE;
+    void detectAndCompute( InputArray image, InputArray depth, InputArray mask, std::vector<KeyPoint>& keypoints,
+                             OutputArray descriptors, bool useProvidedKeypoints=false ) CV_OVERRIDE;
 
 protected:
 
@@ -826,6 +827,7 @@ static void uploadORBKeypoints(const std::vector<KeyPoint>& src,
 static void computeKeyPoints(const Mat& imagePyramid,
                              const UMat& uimagePyramid,
                              const Mat& maskPyramid,
+                             const Mat& depthPyramid,
                              const std::vector<Rect>& layerInfo,
                              const UMat& ulayerInfo,
                              const std::vector<float>& layerScale,
@@ -894,6 +896,8 @@ static void computeKeyPoints(const Mat& imagePyramid,
 
         // Remove keypoints very close to the border
         KeyPointsFilter::runByImageBorder(keypoints, img.size(), edgeThreshold);
+
+        //TODO keypoint flitering utilize depth
 
         // Keep more points than necessary as FAST does not give amazing corners
         KeyPointsFilter::retainBest(keypoints, scoreType == ORB_Impl::HARRIS_SCORE ? 2 * featuresNum : featuresNum);
@@ -1009,10 +1013,11 @@ static void computeKeyPoints(const Mat& imagePyramid,
  * @param do_keypoints if true, the keypoints are computed, otherwise used as an input
  * @param do_descriptors if true, also computes the descriptors
  */
-void ORB_Impl::detectAndCompute( InputArray _image, InputArray _mask,
+void ORB_Impl::detectAndCompute( InputArray _image, InputArray _depth, InputArray _mask,
                                  std::vector<KeyPoint>& keypoints,
                                  OutputArray _descriptors, bool useProvidedKeypoints )
-{
+{   
+    std::cout << "start detectandcompute" << std::endl;
     CV_INSTRUMENT_REGION();
 
     CV_Assert(patchSize >= 2);
@@ -1039,6 +1044,18 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _mask,
     Mat image = _image.getMat(), mask = _mask.getMat();
     if( image.type() != CV_8UC1 )
         cvtColor(_image, image, COLOR_BGR2GRAY);
+
+    Mat depth;
+    if (!_depth.empty()) {
+        std::cout << "Got a depth infromation" << std::endl;
+        depth = _depth.getMat();
+        if (depth.type() != CV_32F) {
+            depth.convertTo(depth, CV_32F);
+        }
+        // Ensure depth matches image size
+        CV_Assert(false);
+        CV_Assert(depth.size() == image.size());
+    }
 
     int i, level, nLevels = this->nlevels, nkeypoints = (int)keypoints.size();
     bool sortedByLevel = true;
@@ -1069,7 +1086,7 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _mask,
     std::vector<Rect> layerInfo(nLevels);
     std::vector<int> layerOfs(nLevels);
     std::vector<float> layerScale(nLevels);
-    Mat imagePyramid, maskPyramid;
+    Mat imagePyramid, maskPyramid ,depthPyramid;
     UMat uimagePyramid, ulayerInfo;
 
     float level0_inv_scale = 1.0f / getScale(0, firstLevel, scaleFactor);
@@ -1103,8 +1120,12 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _mask,
     imagePyramid.create(bufSize, CV_8U);
     if( !mask.empty() )
         maskPyramid.create(bufSize, CV_8U);
+    // Create depth pyramid similar to image pyramid
+    if (!depth.empty()) {
+        depthPyramid.create(bufSize, CV_32F);
+    }
 
-    Mat prevImg = image, prevMask = mask;
+    Mat prevImg = image, prevMask = mask, prevDepth = depth;
 
     // Pre-compute the scale pyramids
     for (level = 0; level < nLevels; ++level)
@@ -1122,6 +1143,13 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _mask,
             currMask = extMask(Rect(border, border, sz.width, sz.height));
         }
 
+        // New: Handle depth pyramid creation
+        Mat extDepth, currDepth;
+        if (!depth.empty()) {
+            extDepth = depthPyramid(wholeLinfo);
+            currDepth = extDepth(Rect(border, border, sz.width, sz.height));
+        }
+
         // Compute the resized image
         if( level != firstLevel )
         {
@@ -1132,12 +1160,21 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _mask,
                 if( level > firstLevel )
                     threshold(currMask, currMask, 254, 0, THRESH_TOZERO);
             }
+            // Resize depth if available
+            if (!depth.empty()) {
+                resize(prevDepth, currDepth, sz, 0, 0, INTER_NEAREST);
+            }
 
             copyMakeBorder(currImg, extImg, border, border, border, border,
                            BORDER_REFLECT_101+BORDER_ISOLATED);
             if (!mask.empty())
                 copyMakeBorder(currMask, extMask, border, border, border, border,
                                BORDER_CONSTANT+BORDER_ISOLATED);
+            // Add depth border handling
+            if (!depth.empty()) {
+                copyMakeBorder(currDepth, extDepth, border, border, border, border,
+                               BORDER_REFLECT_101+BORDER_ISOLATED);
+            }
         }
         else
         {
@@ -1146,11 +1183,19 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _mask,
             if( !mask.empty() )
                 copyMakeBorder(mask, extMask, border, border, border, border,
                                BORDER_CONSTANT+BORDER_ISOLATED);
+            // Add depth border for first level
+            if (!depth.empty()) {
+                copyMakeBorder(depth, extDepth, border, border, border, border,
+                               BORDER_REFLECT_101);
+            }
         }
         if (level > firstLevel)
         {
             prevImg = currImg;
             prevMask = currMask;
+            if (!depth.empty()) {
+                prevDepth = currDepth;
+            }
         }
     }
 
@@ -1163,7 +1208,7 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _mask,
             imagePyramid.copyTo(uimagePyramid);
 
         // Get keypoints, those will be far enough from the border that no check will be required for the descriptor
-        computeKeyPoints(imagePyramid, uimagePyramid, maskPyramid,
+        computeKeyPoints(imagePyramid, uimagePyramid, maskPyramid, depthPyramid, 
                          layerInfo, ulayerInfo, layerScale, keypoints,
                          nfeatures, scaleFactor, edgeThreshold, patchSize, scoreType, useOCL, fastThreshold);
     }

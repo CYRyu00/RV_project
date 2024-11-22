@@ -118,7 +118,9 @@ static PyMethodDef special_methods[] = {
   {"dnn_registerLayer", CV_PY_FN_WITH_KW(pyopencv_cv_dnn_registerLayer), "registerLayer(type, class) -> None"},
   {"dnn_unregisterLayer", CV_PY_FN_WITH_KW(pyopencv_cv_dnn_unregisterLayer), "unregisterLayer(type) -> None"},
 #endif
-  {NULL, NULL},
+  {"detectAndCompute", (PyCFunction)pyopencv_cv_ORB_detectAndCompute, METH_VARARGS | METH_KEYWORDS,
+     "ORB.detectAndCompute(image, depth, mask, keypoints, descriptors[, useProvidedKeypoints]) -> keypoints, descriptors"}, 
+{NULL, NULL, 0, NULL}
 };
 
 /************************************************************************/
