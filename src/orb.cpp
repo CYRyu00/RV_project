@@ -1018,7 +1018,7 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _depth, InputArra
                                  std::vector<KeyPoint>& keypoints,
                                  OutputArray _descriptors, bool useProvidedKeypoints )
 {   
-    std::ofstream logFile("output.log", std::ios::app); // Open in append mode
+    std::ofstream logFile("output.txt", std::ios::app); // Open in append mode
     if (logFile.is_open()) {
         logFile << "start detect and compute" << std::endl;
         logFile.close();
@@ -1051,19 +1051,21 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _depth, InputArra
         cvtColor(_image, image, COLOR_BGR2GRAY);
 
     Mat depth;
-    if (!_depth.empty()) {
-        logFile.open("output.log", std::ios::app); // Open in append mode again
-        if (logFile.is_open()) {
-            logFile << "Got a Depth Data" << std::endl;
-            logFile.close();
-        }
-
+    
         depth = _depth.getMat();
         if (depth.type() != CV_32F) {
             depth.convertTo(depth, CV_32F);
         }
         // Ensure depth matches image size
         CV_Assert(depth.size() == image.size());
+        if (!_depth.empty()) {
+        logFile.open("output.txt", std::ios::app); // Open in append mode again
+        if (logFile.is_open()) {
+            logFile << "Got a Depth Data" << std::endl;
+            logFile << depth << std::endl;
+            logFile.close();
+        }
+
     }
 
     int i, level, nLevels = this->nlevels, nkeypoints = (int)keypoints.size();
