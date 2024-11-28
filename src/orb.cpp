@@ -40,6 +40,7 @@
 #include <iostream>
 #include <fstream>
 #include <opencv2/core/utils/logger.hpp>
+#include <cmath>
 #ifndef CV_IMPL_ADD
 #define CV_IMPL_ADD(x)
 #endif
@@ -821,24 +822,24 @@ static void uploadORBKeypoints(const std::vector<KeyPoint>& src,
 #endif
 
 
-bool domask(float depthValue, int level, int nlevels, float minDepth)
+bool domask(float depthValue, int level, int nlevels, float scaleFactor, float minDepth)
 {   
-    // Compute a factor based on depth and levels
-    int factor = cvCeil((nlevels - 1) * minDepth);
-    
-    // Define levelmin and levelmax as functions of depth
-    int levelmax = cvFloor(factor / depthValue);
-    int levelmin = levelmax - cvFloor(nlevels / 4);
+    double factor = minDepth * pow(scaleFactor, (nlevels - 1));
+
+    double levelmax = log(factor / depthValue) / log(scaleFactor);
+    int levelmaxInt = cvFloor(levelmax);
+
+    int levelmin = levelmaxInt - cvFloor(nlevels / 4);
     
     // Clamp levelmin and levelmax to valid level ranges
     if (levelmin < 0){   
         levelmin = 0;
-        levelmax = cvFloor(nlevels / 4);
+        levelmaxInt = cvFloor(nlevels / 4);
     }
     levelmin = std::max(0, levelmin);
-    levelmax = std::min(nlevels - 1, levelmax);
+    levelmaxInt = std::min(nlevels - 1, levelmaxInt);
 
-    return (level >= levelmin && level <= levelmax) || (level % 4 == 1) || (depthValue == 0);
+    return (level >= levelmin && level <= levelmaxInt) || (level % 4 == 1) || (depthValue == 0);
 }
 
 /** Compute the ORB_Impl keypoints on an image
@@ -926,28 +927,21 @@ static void computeKeyPoints(const Mat& imagePyramid,
                     
                     // logFile.open("debug2.txt", std::ios::app); 
                     // if (logFile.is_open()) {
-                    //     logFile << "do: "<< domask(depthValue, level, nlevels, 2.0) << " ";
+                    //     logFile << "do: "<< domask(depthValue, level, nlevels, scaleFactor, 2.0) << " ";
                     //     // Compute a factor based on depth and levels
-                    //     float minDepth = 1;
-                    //     float _factor = cvCeil((nlevels - 1) * minDepth);
-                        
-                    //     // Define levelmin and levelmax as functions of depth
-                    //     int levelmax = cvFloor(_factor / depthValue);
-                    //     int levelmin = levelmax - cvFloor(nlevels / 4);
-                        
-                    //     // Clamp levelmin and levelmax to valid level ranges
-                    //     // if (levelmin < 0){   
-                    //     //     levelmin = 0;
-                    //     //     levelmax = cvFloor(nlevels / 4);
-                    //     // }
-                    //     // levelmin = std::max(0, levelmin);
-                    //     // levelmax = std::min(nlevels - 1, levelmax);
-                    //     logFile << " d:  " << depthValue << " f: " << _factor << " (" << levelmin << ", " << levelmax << " ) /";
+                    //     float minDepth = 2.0;
+                    //     double _factor = minDepth * pow(scaleFactor, (nlevels - 1));
+                    //     double levelmax = log(factor / depthValue) / log(scaleFactor);
+                    //     int levelmaxInt = cvFloor(levelmax);
+                    //     int levelmin = levelmaxInt - cvFloor(nlevels / 4);
+
+                    //     logFile << " d:  " << depthValue << " f: " << _factor << " (" << levelmin << ", " << levelmaxInt << " ) /";
 
                     //     logFile.close();
                     // }
 
-                    if (domask(depthValue, level, nlevels, 2.0)) // HYPER_PARAM : 2.0 [m] might best choice
+                    // if (domask(depthValue, level, nlevels, scaleFactor, 2.0)) // HYPER_PARAM : 2.0 [m] might best choice
+                    if(true)
                     {
                         depthMask.at<uchar>(y, x) = 255;
                     }
@@ -1086,11 +1080,11 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _depth, InputArra
                                  std::vector<KeyPoint>& keypoints,
                                  OutputArray _descriptors, bool useProvidedKeypoints )
 {   
-    std::ofstream logFile("debug.txt", std::ios::app); // Open in append mode
-    if (logFile.is_open()) {
-        logFile << "start detect and compute" << std::endl;
-        logFile.close();
-    }
+    // std::ofstream logFile("debug.txt", std::ios::app); // Open in append mode
+    // if (logFile.is_open()) {
+    //     logFile << "start detect and compute" << std::endl;
+    //     logFile.close();
+    // }
     CV_INSTRUMENT_REGION();
 
     CV_Assert(patchSize >= 2);
@@ -1128,12 +1122,12 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _depth, InputArra
         if (!_depth.empty()) {
             // Ensure depth matches image size
             CV_Assert(depth.size() == image.size());
-            logFile.open("debug.txt", std::ios::app); // Open in append mode again
-            if (logFile.is_open()) {
-                logFile << "Got a Depth Data" << std::endl;
-                logFile << depth << std::endl;
-                logFile.close();
-            }
+            // logFile.open("debug.txt", std::ios::app); // Open in append mode again
+            // if (logFile.is_open()) {
+            //     logFile << "Got a Depth Data" << std::endl;
+            //     logFile << depth << std::endl;
+            //     logFile.close();
+            // }
         }
 
     int i, level, nLevels = this->nlevels, nkeypoints = (int)keypoints.size();
