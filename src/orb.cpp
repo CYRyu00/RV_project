@@ -707,7 +707,7 @@ public:
     int defaultNorm() const CV_OVERRIDE;
 
     // Compute the ORB_Impl features and descriptors on an image
-    void detectAndCompute( InputArray image, InputArray depth, InputArray mask, std::vector<KeyPoint>& keypoints,
+    void detectAndCompute( InputArray image, InputArray depth, double minDepth, InputArray mask, std::vector<KeyPoint>& keypoints,
                              OutputArray descriptors, bool useProvidedKeypoints=false ) CV_OVERRIDE;
 
 protected:
@@ -822,25 +822,25 @@ static void uploadORBKeypoints(const std::vector<KeyPoint>& src,
 #endif
 
 
-bool domask(float depthValue, int level, int nlevels, float scaleFactor, float minDepth)
-{   
-    double factor = minDepth * pow(scaleFactor, (nlevels - 1));
+// bool domask(float depthValue, int level, int nlevels, float scaleFactor, double minDepth)
+// {   
+//     double factor = minDepth * pow(scaleFactor, (nlevels - 1));
 
-    double levelmax = log(factor / depthValue) / log(scaleFactor);
-    int levelmaxInt = cvFloor(levelmax);
+//     double levelmax = log(factor / depthValue) / log(scaleFactor);
+//     int levelmaxInt = cvFloor(levelmax);
 
-    int levelmin = levelmaxInt - cvFloor(nlevels / 4);
+//     int levelmin = levelmaxInt - cvFloor(nlevels / 4);
     
-    // Clamp levelmin and levelmax to valid level ranges
-    if (levelmin < 0){   
-        levelmin = 0;
-        levelmaxInt = cvFloor(nlevels / 4);
-    }
-    levelmin = std::max(0, levelmin);
-    levelmaxInt = std::min(nlevels - 1, levelmaxInt);
+//     // Clamp levelmin and levelmax to valid level ranges
+//     if (levelmin < 0){   
+//         levelmin = 0;
+//         levelmaxInt = cvFloor(nlevels / 4);
+//     }
+//     levelmin = std::max(0, levelmin);
+//     levelmaxInt = std::min(nlevels - 1, levelmaxInt);
 
-    return (level >= levelmin && level <= levelmaxInt) || (level % 4 == 1) || (depthValue == 0);
-}
+//     return (level >= levelmin && level <= levelmaxInt) || (level % 4 == 1) || (depthValue == 0);
+// }
 
 /** Compute the ORB_Impl keypoints on an image
  * @param image_pyramid the image pyramid to compute the features and descriptors on
@@ -851,6 +851,7 @@ static void computeKeyPoints(const Mat& imagePyramid,
                              const UMat& uimagePyramid,
                              const Mat& maskPyramid,
                              const Mat& depthPyramid,
+                             double minDepth,
                              const std::vector<Rect>& layerInfo,
                              const UMat& ulayerInfo,
                              const std::vector<float>& layerScale,
@@ -868,9 +869,10 @@ static void computeKeyPoints(const Mat& imagePyramid,
 
     // fill the extractors and descriptors for the corresponding scales
     float factor = (float)(1.0 / scaleFactor);
-    float ndesiredFeaturesPerScale = nfeatures*(1 - factor)/(1 - (float)std::pow((double)factor, (double)nlevels));
+    float ndesiredFeaturesPerScale = nfeatures*(1 - factor)/(1 - (float)std::pow((double)factor, (double)nlevels)); //TODO
 
     int sumFeatures = 0;
+    float nfeaturescale = 1.5;
     for( level = 0; level < nlevels-1; level++ )
     {
         nfeaturesPerLevel[level] = cvRound(ndesiredFeaturesPerScale);
@@ -905,48 +907,41 @@ static void computeKeyPoints(const Mat& imagePyramid,
     std::vector<int> counters(nlevels);
     keypoints.reserve(nfeaturesPerLevel[0]*2);
     // std::ofstream logFile("debug2.txt", std::ios::app); 
+    float ds_factor = minDepth * pow(scaleFactor, (nlevels*1.25 - 1));
     for( level = 0; level < nlevels; level++ )
     {   
+        float depthMin = ds_factor *pow(scaleFactor, -(level + nlevels/4 ));
+        float depthMax = (level == 0) ? 1000 : ds_factor *pow(scaleFactor, -(level));
+
         // logFile.open("debug2.txt", std::ios::app); 
         // if (logFile.is_open()) {
-        //     logFile << std::endl << "level : " << level<< std::endl;
+        //     logFile << std::endl << "level : " << level;
+        //     logFile  << "( " << depthMin << ", " << depthMax << " )  " << std::endl;
         //     logFile.close();
         // }
+
         int featuresNum = nfeaturesPerLevel[level];
         Mat img = imagePyramid(layerInfo[level]);
-        
         Mat depth = depthPyramid(layerInfo[level]);
 
-            // Create a depth-based mask for the current level
-            Mat depthMask = Mat::zeros(depth.size(), CV_8U);
-            for (int y = 0; y < depth.rows; ++y)
+        // Create a depth-based mask for the current level
+        Mat depthMask = Mat::zeros(depth.size(), CV_8U);
+        for (int y = 0; y < depth.rows; ++y)
+        {
+            for (int x = 0; x < depth.cols; ++x)
             {
-                for (int x = 0; x < depth.cols; ++x)
+                float depthValue = depth.at<float>(y, x);
+                if (( level %4 == 1 ) || ( depthValue >= depthMin && depthValue <= depthMax ) || (depthValue == 0.0)) // HYPER_PARAM : 2.0 [m] might best choice
                 {
-                    float depthValue = depth.at<float>(y, x);
-                    
                     // logFile.open("debug2.txt", std::ios::app); 
                     // if (logFile.is_open()) {
-                    //     logFile << "do: "<< domask(depthValue, level, nlevels, scaleFactor, 2.0) << " ";
-                    //     // Compute a factor based on depth and levels
-                    //     float minDepth = 2.0;
-                    //     double _factor = minDepth * pow(scaleFactor, (nlevels - 1));
-                    //     double levelmax = log(factor / depthValue) / log(scaleFactor);
-                    //     int levelmaxInt = cvFloor(levelmax);
-                    //     int levelmin = levelmaxInt - cvFloor(nlevels / 4);
-
-                    //     logFile << " d:  " << depthValue << " f: " << _factor << " (" << levelmin << ", " << levelmaxInt << " ) /";
-
+                    //     logFile  << "  " <<  (( depthValue >= depthMin && depthValue <= depthMax ) || (depthValue == 0.0));
                     //     logFile.close();
                     // }
-
-                    // if (domask(depthValue, level, nlevels, scaleFactor, 2.0)) // HYPER_PARAM : 2.0 [m] might best choice
-                    if(true)
-                    {
-                        depthMask.at<uchar>(y, x) = 255;
-                    }
+                    depthMask.at<uchar>(y, x) = 255;
                 }
             }
+        }
 
         // Combine with existing mask, if any
         Mat mask = maskPyramid.empty() ? depthMask : (maskPyramid(layerInfo[level]) & depthMask);
@@ -1076,7 +1071,7 @@ static void computeKeyPoints(const Mat& imagePyramid,
  * @param do_keypoints if true, the keypoints are computed, otherwise used as an input
  * @param do_descriptors if true, also computes the descriptors
  */
-void ORB_Impl::detectAndCompute( InputArray _image, InputArray _depth, InputArray _mask,
+void ORB_Impl::detectAndCompute( InputArray _image, InputArray _depth, double _minDepth, InputArray _mask,
                                  std::vector<KeyPoint>& keypoints,
                                  OutputArray _descriptors, bool useProvidedKeypoints )
 {   
@@ -1112,23 +1107,21 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _depth, InputArra
     if( image.type() != CV_8UC1 )
         cvtColor(_image, image, COLOR_BGR2GRAY);
 
-    Mat depth;
+    Mat depth = _depth.getMat();
+    if (depth.type() != CV_32F) {
+        depth.convertTo(depth, CV_32F);
+    }
     
-        depth = _depth.getMat();
-        if (depth.type() != CV_32F) {
-            depth.convertTo(depth, CV_32F);
-        }
-        
-        if (!_depth.empty()) {
-            // Ensure depth matches image size
-            CV_Assert(depth.size() == image.size());
-            // logFile.open("debug.txt", std::ios::app); // Open in append mode again
-            // if (logFile.is_open()) {
-            //     logFile << "Got a Depth Data" << std::endl;
-            //     logFile << depth << std::endl;
-            //     logFile.close();
-            // }
-        }
+    if (!_depth.empty()) {
+        // Ensure depth matches image size
+        CV_Assert(depth.size() == image.size());
+        // logFile.open("debug.txt", std::ios::app); // Open in append mode again
+        // if (logFile.is_open()) {
+        //     logFile << "Got a Depth Data" << std::endl;
+        //     logFile << depth << std::endl;
+        //     logFile.close();
+        // }
+    }
 
     int i, level, nLevels = this->nlevels, nkeypoints = (int)keypoints.size();
     bool sortedByLevel = true;
@@ -1281,7 +1274,7 @@ void ORB_Impl::detectAndCompute( InputArray _image, InputArray _depth, InputArra
             imagePyramid.copyTo(uimagePyramid);
 
         // Get keypoints, those will be far enough from the border that no check will be required for the descriptor
-        computeKeyPoints(imagePyramid, uimagePyramid, maskPyramid, depthPyramid, 
+        computeKeyPoints(imagePyramid, uimagePyramid, maskPyramid, depthPyramid, _minDepth,
                          layerInfo, ulayerInfo, layerScale, keypoints,
                          nfeatures, scaleFactor, edgeThreshold, patchSize, scoreType, useOCL, fastThreshold);
     }

@@ -461,7 +461,7 @@ public:
     CV_WRAP static Ptr<ORB> create(int nfeatures=500, float scaleFactor=1.2f, int nlevels=8, int edgeThreshold=31,
         int firstLevel=0, int WTA_K=2, ORB::ScoreType scoreType=ORB::HARRIS_SCORE, int patchSize=31, int fastThreshold=20);
 
-    CV_WRAP virtual void detectAndCompute( InputArray image, InputArray depth ,InputArray mask,
+    CV_WRAP virtual void detectAndCompute( InputArray image, InputArray depth , double minDepth, InputArray mask,
                                          CV_OUT std::vector<KeyPoint>& keypoints,
                                          OutputArray descriptors,
                                          bool useProvidedKeypoints = false ) = 0;
